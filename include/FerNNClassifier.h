@@ -17,7 +17,7 @@ private:
   float thr_nn;
   int acum;
 public:
-  //Parameters
+  //Parameters初始时读入
   float thr_nn_valid;
 
   void read(const cv::FileNode& file);
@@ -34,7 +34,7 @@ public:
   int getNumStructs(){return nstructs;}
   float getFernTh(){return thr_fern;}
   float getNNTh(){return thr_nn;}
-  struct Feature
+  struct Feature//特征结构体
       {
           uchar x1, y1, x2, y2;
           Feature() : x1(0), y1(0), x2(0), y2(0) {}
