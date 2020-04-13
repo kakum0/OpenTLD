@@ -30,14 +30,14 @@ struct DetStruct {
     std::vector<float> conf;
   };
 
-struct OComparator{
+struct OComparator{//比较两者重合度
   OComparator(const std::vector<BoundingBox>& _grid):grid(_grid){}
   std::vector<BoundingBox> grid;
   bool operator()(int idx1,int idx2){
     return grid[idx1].overlap > grid[idx2].overlap;
   }
 };
-struct CComparator{
+struct CComparator{ //比较两者确信度
   CComparator(const std::vector<float>& _conf):conf(_conf){}
   std::vector<float> conf;
   bool operator()(int idx1,int idx2){
@@ -48,21 +48,22 @@ struct CComparator{
 
 class TLD{
 private:
-  cv::PatchGenerator generator;
+  cv::PatchGenerator generator;//PatchGenerator类用来对图像区域进行仿射变换
   FerNNClassifier classifier;
   LKTracker tracker;
-  ///Parameters
+  ///Parameters 下面这些参数通过程序开始运行时读入parameters.yml文件进行初始化
   int bbox_step;
   int min_win;
   int patch_size;
-  //initial parameters for positive examples
-  int num_closest_init;
-  int num_warps_init;
+  //initial parameters for positive examples  
+  //从第一帧得到的目标的bounding box中（文件读取或者用户框定），经过几何变换得到 num_closest_init * num_warps_init 个正样本
+  int num_closest_init;//最近邻窗口数 10
+  int num_warps_init;//几何变换数目 20
   int noise_init;
   float angle_init;
   float shift_init;
   float scale_init;
-  //update parameters for positive examples
+  //update parameters for positive examples从跟踪得到的目标的bounding box中，经过几何变换更新正样本
   int num_closest_update;
   int num_warps_update;
   int noise_update;
@@ -77,7 +78,9 @@ private:
   cv::Mat iisum;
   cv::Mat iisqsum;
   float var;
-//Training data
+//Training data  pair类型是两个类型的组合成一个数据
+//pair实质上是一个结构体，其主要的两个成员变量是first和second，这两个变量可以直接使用。
+//在这里用来表示样本，first成员为 features 特征点数组，second成员为 labels 样本类别标签
   std::vector<std::pair<std::vector<int>,int> > pX; //positive ferns <features,labels=1>
   std::vector<std::pair<std::vector<int>,int> > nX; // negative ferns <features,labels=0>
   cv::Mat pEx;  //positive NN example
@@ -109,7 +112,7 @@ private:
   std::vector<cv::Size> scales;
   std::vector<int> good_boxes; //indexes of bboxes with overlap > 0.6
   std::vector<int> bad_boxes; //indexes of bboxes with overlap < 0.2
-  BoundingBox bbhull; // hull of good_boxes
+  BoundingBox bbhull; // hull of good_boxes窗口的边框
   BoundingBox best_box; // maximum overlapping bbox
 
 public:
