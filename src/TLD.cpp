@@ -42,14 +42,16 @@ void TLD::read(const FileNode& file){
   bad_patches = (int)file["num_patches"];
   classifier.read(file);
 }
-
+//完成准备工作
 void TLD::init(const Mat& frame1,const Rect& box,FILE* bb_file){
   //bb_file = fopen("bounding_boxes.txt","w");
   //Get Bounding Boxes
-    buildGrid(frame1,box);
-    printf("Created %d bounding boxes\n",(int)grid.size());
+    buildGrid(frame1,box);//此函数根据传入的box（目标边界框）在传入的图像frame1中构建全部的扫描窗口，并计算重叠度
+    printf("Created %d bounding boxes\n",(int)grid.size()); //vector的成员size()用于获取向量元素的个数
   ///Preparation
   //allocation
+  //积分图像，用以计算2bitBP特征（类似于haar特征的计算）
+  //Mat的创建，方式有两种：1.调用create（行，列，类型）2.Mat（行，列，类型（值）
   iisum.create(frame1.rows+1,frame1.cols+1,CV_32F);
   iisqsum.create(frame1.rows+1,frame1.cols+1,CV_64F);
   dconf.reserve(100);
@@ -62,9 +64,15 @@ void TLD::init(const Mat& frame1,const Rect& box,FILE* bb_file){
   dt.bb.reserve(grid.size());
   good_boxes.reserve(grid.size());
   bad_boxes.reserve(grid.size());
+  //TLD中定义：cv::Mat pEx;  //positive NN example 大小为15*15图像片
   pEx.create(patch_size,patch_size,CV_64F);
   //Init Generator
   generator = PatchGenerator (0,0,noise_init,true,1-scale_init,1+scale_init,-angle_init*CV_PI/180,angle_init*CV_PI/180,-angle_init*CV_PI/180,angle_init*CV_PI/180);
+  //此函数根据传入的box（目标边界框），在整帧图像中的全部窗口中寻找与该box距离最小（即最相似，
+  //重叠度最大）的num_closest_init个窗口，然后把这些窗口 归入good_boxes容器
+  //同时，把重叠度小于0.2的，归入 bad_boxes 容器
+  //首先根据overlap的比例信息选出重复区域比例大于60%并且前num_closet_init= 10个的最接近box的RectBox，
+  //相当于对RectBox进行筛选。并通过BBhull函数得到这些RectBox的最大边界。
   getOverlappingBoxes(box,num_closest_init);
   printf("Found %d good boxes, %d bad boxes\n",(int)good_boxes.size(),(int)bad_boxes.size());
   printf("Best Box: %d %d %d %d\n",best_box.x,best_box.y,best_box.width,best_box.height);
@@ -83,7 +91,13 @@ void TLD::init(const Mat& frame1,const Rect& box,FILE* bb_file){
   // Set variance threshold
   Scalar stdev, mean;
   meanStdDev(frame1(best_box),mean,stdev);
+  //利用积分图像去计算每个待检测窗口的方差
+  //计算积分图像，输入图像，sum积分图像, W+1×H+1，sqsum对象素值平方的积分图像，tilted_sum旋转45度的积分图像
+  //利用积分图像，可以计算在某象素的上－右方的或者旋转的矩形区域中进行求和、求均值以及标准方差的计算，
+  //并且保证运算的复杂度为O(1)。  
   integral(frame1,iisum,iisqsum);
+  //级联分类器模块一：方差检测模块，利用积分图计算每个待检测窗口的方差，方差大于var阈值（目标patch方差的50%）的，
+  //则认为其含有前景目标方差；var 为标准差的平方
   var = pow(stdev.val[0],2)*0.5; //getVar(best_box,iisum,iisqsum);
   cout << "variance: " << var << endl;
   //check variance
@@ -118,6 +132,7 @@ void TLD::init(const Mat& frame1,const Rect& box,FILE* bb_file){
       nn_data[i+1]= nEx[i];
   }
   ///Training
+  //训练 集合分类器（森林） 和 最近邻分类器 
   classifier.trainF(ferns_data,2); //bootstrap = 2
   classifier.trainNN(nn_data);
   ///Threshold Evaluation on testing sets
@@ -238,7 +253,7 @@ void TLD::processFrame(const cv::Mat& img1,const cv::Mat& img2,vector<Point2f>& 
   }
   ///Detect
   detect(img2);
-  ///Integration
+  ///Integration检测模块
   if (tracked){
       bbnext=tbb;
       lastconf=tconf;
@@ -469,6 +484,7 @@ void TLD::detect(const cv::Mat& frame){
   int idx;
   Scalar mean, stdev;
   float nn_th = classifier.getNNTh();
+  //最近邻分类器检测模块
   for (int i=0;i<detections;i++){                                         //  for every remaining detection
       idx=dt.bb[i];                                                       //  Get the detected bounding box index
 	  patch = frame(grid[idx]);
@@ -527,6 +543,7 @@ void TLD::learn(const Mat& img){
   for (int i=0;i<grid.size();i++){
       grid[i].overlap = bbOverlap(lastbox,grid[i]);
   }
+  //集合分类器
   vector<pair<vector<int>,int> > fern_examples;
   good_boxes.clear();
   bad_boxes.clear();
@@ -547,6 +564,7 @@ void TLD::learn(const Mat& img){
           fern_examples.push_back(make_pair(tmp.patt[idx],0));
       }
   }
+  //最近邻分类器
   vector<Mat> nn_examples;
   nn_examples.reserve(dt.bb.size()+1);
   nn_examples.push_back(pEx);
