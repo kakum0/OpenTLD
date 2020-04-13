@@ -19,14 +19,17 @@ Mat createMask(const Mat& image, CvRect box){
   drawBox(mask,box,Scalar::all(255),CV_FILLED);
   return mask;
 }
-
+//STL中的nth_element()方法找出一个数列中排名第n的那个数。
+//对于序列a[0:len-1]将第n大的数字，排在a[n],同时a[0:n-1]都小于a[n],a[n+1:]都大于a[n],
+//但a[n]左右的这两个序列不一定有序。
+//用在中值流跟踪算法中，寻找中值
 float median(vector<float> v)
 {
     int n = floor(v.size() / 2);
     nth_element(v.begin(), v.begin()+n, v.end());
     return v[n];
 }
-
+//index_shuffle()用于产生指定范围[begin:end]的随机数，返回随机数数组（用到洗牌算法）
 vector<int> index_shuffle(int begin,int end){
   vector<int> indexes(end-begin);
   for (int i=begin;i<end;i++){
