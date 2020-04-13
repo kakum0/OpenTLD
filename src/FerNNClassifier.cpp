@@ -14,8 +14,8 @@ void FerNNClassifier::read(const FileNode& file){
   ///Classifier Parameters
   valid = (float)file["valid"];
   ncc_thesame = (float)file["ncc_thesame"];
-  nstructs = (int)file["num_trees"];
-  structSize = (int)file["num_features"];
+  nstructs = (int)file["num_trees"];//树木（由一个特征组构建，每组特征代表图像块的不同视图表示）的个数
+  structSize = (int)file["num_features"];//每棵树的特征个数，也即每棵树的节点个数；树上每一个特征都作为一个决策节点
   thr_fern = (float)file["thr_fern"];
   thr_nn = (float)file["thr_nn"];
   thr_nn_valid = (float)file["thr_nn_valid"];
@@ -25,10 +25,12 @@ void FerNNClassifier::prepare(const vector<Size>& scales){
   acum = 0;
   //Initialize test locations for features
   int totalFeatures = nstructs*structSize;
+  //二维向量  包含全部尺度（scales）的扫描窗口，每个尺度包含totalFeatures个特征
   features = vector<vector<Feature> >(scales.size(),vector<Feature> (totalFeatures));
   RNG& rng = theRNG();
   float x1f,x2f,y1f,y2f;
   int x1, x2, y1, y2;
+  //用随机数去填充每一个尺度扫描窗口的特征
   for (int i=0;i<totalFeatures;i++){
       x1f = (float)rng;
       y1f = (float)rng;
@@ -46,14 +48,14 @@ void FerNNClassifier::prepare(const vector<Size>& scales){
   //Thresholds
   thrN = 0.5*nstructs;
 
-  //Initialize Posteriors
+  //Initialize Posteriors 初始化后验概率
   for (int i = 0; i<nstructs; i++) {
       posteriors.push_back(vector<float>(pow(2.0,structSize), 0));
       pCounter.push_back(vector<int>(pow(2.0,structSize), 0));
       nCounter.push_back(vector<int>(pow(2.0,structSize), 0));
   }
 }
-
+//该函数得到输入的image的用于树的节点，也就是特征组的特征（13位的二进制代码）
 void FerNNClassifier::getFeatures(const cv::Mat& image,const int& scale_idx, vector<int>& fern){
   int leaf;
   for (int t=0;t<nstructs;t++){
@@ -72,7 +74,7 @@ float FerNNClassifier::measure_forest(vector<int> fern) {
   }
   return votes;
 }
-
+//更新正负样本数，同时更新后验概率
 void FerNNClassifier::update(const vector<int>& fern, int C, int N) {
   int idx;
   for (int i = 0; i < nstructs; i++) {
@@ -85,7 +87,7 @@ void FerNNClassifier::update(const vector<int>& fern, int C, int N) {
       }
   }
 }
-
+//训练集合分类器（n个基本分类器集合）
 void FerNNClassifier::trainF(const vector<std::pair<vector<int>,int> >& ferns,int resample){
   // Conf = function(2,X,Y,Margin,Bootstrap,Idx)
   //                 0 1 2 3      4         5
@@ -110,7 +112,8 @@ void FerNNClassifier::trainF(const vector<std::pair<vector<int>,int> >& ferns,in
       }
   //}
 }
-
+ 
+//训练最近邻分类器
 void FerNNClassifier::trainNN(const vector<cv::Mat>& nn_examples){
   float conf,dummy;
   vector<int> y(nn_examples.size(),0);
@@ -208,7 +211,7 @@ float fconf;
   if (thr_nn>thr_nn_valid)
     thr_nn_valid = thr_nn;
 }
-
+//把正样本库（在线模型）包含的所有正样本显示在窗口上
 void FerNNClassifier::show(){
   Mat examples((int)pEx.size()*pEx[0].rows,pEx[0].cols,CV_8U);
   double minval;
