@@ -14,7 +14,7 @@ bool tl = false;
 bool rep = false;
 bool fromfile=false;
 string video;
-
+//从文件中读取
 void readBB(char* file){
   ifstream bb_file (file);
   string line;
@@ -31,7 +31,7 @@ void readBB(char* file){
   int h = atoi(y2.c_str())-y;// = (int)file["bb_h"];
   box = Rect(x,y,w,h);
 }
-//bounding box mouse callback
+//bounding box mouse callback由鼠标框选
 void mouseHandler(int event, int x, int y, int flags, void *param){
   switch( event ){
   case CV_EVENT_MOUSEMOVE:
@@ -58,12 +58,12 @@ void mouseHandler(int event, int x, int y, int flags, void *param){
     break;
   }
 }
-
+//打印帮助
 void print_help(char** argv){
   printf("use:\n     %s -p /path/parameters.yml\n",argv[0]);
   printf("-s    source video\n-b        bounding box file\n-tl  track and learn\n-r     repeat\n");
 }
-
+//选项切入函数
 void read_options(int argc, char** argv,VideoCapture& capture,FileStorage &fs){
   for (int i=0;i<argc;i++){
       if (strcmp(argv[i],"-b")==0){
@@ -104,9 +104,9 @@ int main(int argc, char * argv[]){
   VideoCapture capture;
   capture.open(0);
   FileStorage fs;
-  //Read options
+  //Read options读用户输入选项
   read_options(argc,argv,capture,fs);
-  //Init camera
+  //Init camera初始化相机
   if (!capture.isOpened())
   {
 	cout << "capture device failed to open!" << endl;
@@ -157,7 +157,7 @@ GETBOUNDINGBOX:
   //Output file
   FILE  *bb_file = fopen("bounding_boxes.txt","w");
   //TLD initialization
-  tld.init(last_gray,box,bb_file);
+  tld.init(last_gray,box,bb_file);//用上面得到的包含目标的Bounding Box和第一帧图像去初始化TLD系统
 
   ///Run-time
   Mat current_gray;
@@ -167,20 +167,21 @@ GETBOUNDINGBOX:
   bool status=true;
   int frames = 1;
   int detections = 1;
-REPEAT:
+REPEAT://进入一个循环：读入新的一帧，然后转换为灰度图像，然后再处理每一帧processFrame
   while(capture.read(frame)){
     //get frame
     cvtColor(frame, current_gray, CV_RGB2GRAY);
     //Process Frame
     tld.processFrame(last_gray,current_gray,pts1,pts2,pbox,status,tl,bb_file);
-    //Draw Points
+    //逐帧读入图片序列，进行算法处理。processFrame共包含四个模块（依次处理）：跟踪模块、检测模块、综合模块和学习模块；
+    //Draw Points如果跟踪成功，则把相应的点和box画出来：
     if (status){
       drawPoints(frame,pts1);
       drawPoints(frame,pts2,Scalar(0,255,0));
       drawBox(frame,pbox);
       detections++;
     }
-    //Display
+    //Display然后显示窗口和交换图像帧，进入下一帧的处理：
     imshow("TLD", frame);
     //swap points and images
     swap(last_gray,current_gray);
