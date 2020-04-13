@@ -63,7 +63,7 @@ void print_help(char** argv){
   printf("use:\n     %s -p /path/parameters.yml\n",argv[0]);
   printf("-s    source video\n-b        bounding box file\n-tl  track and learn\n-r     repeat\n");
 }
-//选项切入函数
+//分析运行程序时的命令行参数
 void read_options(int argc, char** argv,VideoCapture& capture,FileStorage &fs){
   for (int i=0;i<argc;i++){
       if (strcmp(argv[i],"-b")==0){
@@ -104,7 +104,7 @@ int main(int argc, char * argv[]){
   VideoCapture capture;
   capture.open(0);
   FileStorage fs;
-  //Read options读用户输入选项
+  //Read options分析命令行数据
   read_options(argc,argv,capture,fs);
   //Init camera初始化相机
   if (!capture.isOpened())
@@ -126,7 +126,7 @@ int main(int argc, char * argv[]){
       capture >> frame;
       cvtColor(frame, last_gray, CV_RGB2GRAY);
       frame.copyTo(first);
-  }else{
+  }else{//如果为读取摄像头，则设置获取的图像大小为340x240
       capture.set(CV_CAP_PROP_FRAME_WIDTH,340);
       capture.set(CV_CAP_PROP_FRAME_HEIGHT,240);
   }
@@ -141,7 +141,7 @@ GETBOUNDINGBOX:
     else
       first.copyTo(frame);
     cvtColor(frame, last_gray, CV_RGB2GRAY);
-    drawBox(frame,box);
+    drawBox(frame,box);//画框框
     imshow("TLD", frame);
     if (cvWaitKey(33) == 'q')
 	    return 0;
@@ -152,7 +152,7 @@ GETBOUNDINGBOX:
       goto GETBOUNDINGBOX;
   }
   //Remove callback
-  cvSetMouseCallback( "TLD", NULL, NULL );
+  cvSetMouseCallback( "TLD", NULL, NULL );//如果已经获得第一帧用户框定的box了，就取消鼠标响应
   printf("Initial Bounding Box = x:%d y:%d h:%d w:%d\n",box.x,box.y,box.width,box.height);
   //Output file
   FILE  *bb_file = fopen("bounding_boxes.txt","w");
@@ -164,27 +164,27 @@ GETBOUNDINGBOX:
   BoundingBox pbox;
   vector<Point2f> pts1;
   vector<Point2f> pts2;
-  bool status=true;
-  int frames = 1;
-  int detections = 1;
+  bool status=true;//记录跟踪成功与否的状态
+  int frames = 1;//记录已过去帧数
+  int detections = 1;//记录成功检测到的目标box数目
 REPEAT://进入一个循环：读入新的一帧，然后转换为灰度图像，然后再处理每一帧processFrame
   while(capture.read(frame)){
     //get frame
     cvtColor(frame, current_gray, CV_RGB2GRAY);
     //Process Frame
-    tld.processFrame(last_gray,current_gray,pts1,pts2,pbox,status,tl,bb_file);
     //逐帧读入图片序列，进行算法处理。processFrame共包含四个模块（依次处理）：跟踪模块、检测模块、综合模块和学习模块；
+    tld.processFrame(last_gray,current_gray,pts1,pts2,pbox,status,tl,bb_file);   
     //Draw Points如果跟踪成功，则把相应的点和box画出来：
-    if (status){
+    if (status){//若成功
       drawPoints(frame,pts1);
-      drawPoints(frame,pts2,Scalar(0,255,0));
+      drawPoints(frame,pts2,Scalar(0,255,0));//当前特征点用蓝色标志
       drawBox(frame,pbox);
       detections++;
     }
     //Display然后显示窗口和交换图像帧，进入下一帧的处理：
     imshow("TLD", frame);
     //swap points and images
-    swap(last_gray,current_gray);
+    swap(last_gray,current_gray);//交换
     pts1.clear();
     pts2.clear();
     frames++;
