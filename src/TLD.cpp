@@ -84,12 +84,17 @@ void TLD::init(const Mat& frame1,const Rect& box,FILE* bb_file){
   //Print
   fprintf(bb_file,"%d,%d,%d,%d,%f\n",lastbox.x,lastbox.y,lastbox.br().x,lastbox.br().y,lastconf);
   //Prepare Classifier
-  classifier.prepare(scales);
+  classifier.prepare(scales);//主要初始化集合分类器，为每个扫描窗口分配像素比较对，初始化后验概率为0
   ///Generate Data
   // Generate positive data
-  generatePositiveData(frame1,num_warps_init);
+  //此函数通过对第一帧图像的目标框box（用户指定的要跟踪的目标）进行仿射变换来合成训练初始分类器的正样本集。
+  //具体方法如下：先在距离初始的目标框最近的扫描窗口内选择10个bounding box已由getOverlappingBoxes函数得到，存于good_boxes里面了
+  //然后在每个bounding box的内部，进行±1%范围的偏移，±1%范围的尺度变化，±10%范围的平面内旋转，并且在每个像素上增加方差为5的高斯噪声
+  //那么每个box都进行20次这种几何变换，那么10个box将产生200个仿射变换的bounding box，作为正样本
+  generatePositiveData(frame1,num_warps_init); 
   // Set variance threshold
   Scalar stdev, mean;
+  //统计best_box的均值和标准差，var = pow(stdev.val[0],2) * 0.5;作为方差分类器的阈值。
   meanStdDev(frame1(best_box),mean,stdev);
   //利用积分图像去计算每个待检测窗口的方差
   //计算积分图像，输入图像，sum积分图像, W+1×H+1，sqsum对象素值平方的积分图像，tilted_sum旋转45度的积分图像
@@ -104,8 +109,13 @@ void TLD::init(const Mat& frame1,const Rect& box,FILE* bb_file){
   double vr =  getVar(best_box,iisum,iisqsum)*0.5;
   cout << "check variance: " << vr << endl;
   // Generate negative data
+  //故除目标框外的其他图像都是负样本，无需仿射变换；把方差大于var*0.5f的bad_boxes都加入负样本
+  //得到对应的fern特征和标签的nX负样本（用于集合分类器的负样本）；
+  //然后随机在上面的bad_boxes中取bad_patches（100个）个box，然后用 getPattern函数将frame图像bad_box区域的图像片归一化到15*15大小的patch，
+  //存在nEx（用于最近邻分类器的负样本）负样本中。
   generateNegativeData(frame1);
   //Split Negative Ferns into Training and Testing sets (they are already shuffled)
+  //下面这段负责将nEx的一半作为训练集nEx，另一半作为测试集nExT；同样，nX也拆分为训练集nX和测试集nXT
   int half = (int)nX.size()*0.5f;
   nXT.assign(nX.begin()+half,nX.end());
   nX.resize(half);
@@ -114,6 +124,7 @@ void TLD::init(const Mat& frame1,const Rect& box,FILE* bb_file){
   nExT.assign(nEx.begin()+half,nEx.end());
   nEx.resize(half);
   //Merge Negative Data with Positive Data and shuffle it
+  //将负样本nX和正样本pX合并到ferns_data[]中，用于集合分类器的训练
   vector<pair<vector<int>,int> > ferns_data(nX.size()+pX.size());
   vector<int> idx = index_shuffle(0,ferns_data.size());
   int a=0;
@@ -126,16 +137,22 @@ void TLD::init(const Mat& frame1,const Rect& box,FILE* bb_file){
       a++;
   }
   //Data already have been shuffled, just putting it in the same vector
+  //将得到的一个正样本pEx和nEx合并到nn_data[]中，用于最近邻分类器的训练；
   vector<cv::Mat> nn_data(nEx.size()+1);
   nn_data[0] = pEx;
   for (int i=0;i<nEx.size();i++){
       nn_data[i+1]= nEx[i];
   }
   ///Training
-  //训练 集合分类器（森林） 和 最近邻分类器 
+  //训练 集合分类器（森林） 和 最近邻分类器
+  //若是正样本，计算后验概率累加值与初始化的阈值比较，若小于，则分类错误，更新后验概率和阈值，加入正样本库；负的同理
   classifier.trainF(ferns_data,2); //bootstrap = 2
+  //对每一个样本nn_data，如果标签是正样本，通过NNConf(nn_examples[i], isin, conf, dummy);计算输入图像片与在线模型之间的相关相似度conf，
+  //如果相关相似度小于0.65 ，则认为其不含有前景目标，也就是分类错误了；这时候就把它加到正样本库
+  //然后就通过pEx.push_back(nn_examples[i]);将该样本添加到pEx正样本库中；同样，如果出现负样本分类错误，就添加到负样本库。
   classifier.trainNN(nn_data);
   ///Threshold Evaluation on testing sets
+  //用测试集在上面得到的 集合分类器（森林） 和 最近邻分类器中分类，评价并修改得到最好的分类器阈值
   classifier.evaluateTh(nXT,nExT);
 }
 
