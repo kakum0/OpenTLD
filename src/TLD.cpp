@@ -263,14 +263,14 @@ void TLD::processFrame(const cv::Mat& img1,const cv::Mat& img2,vector<Point2f>& 
   int didx; //detection index
   ///Track
   if(lastboxfound && tl){
-  //track函数完成前一帧img1的特征点points1到当前帧img2的特征点points2的跟踪预测； line351   
+  //track函数完成前一帧img1的特征点points1到当前帧img2的特征点points2的跟踪预测； line359   
       track(img1,img2,points1,points2);
   }
   else{
       tracked = false;
   }
   ///Detect
-  //检测模块line455
+  //检测模块line464
   detect(img2);
   ///Integration
   if (tracked){
@@ -303,7 +303,7 @@ void TLD::processFrame(const cv::Mat& img1,const cv::Mat& img2,vector<Point2f>& 
               int cx=0,cy=0,cw=0,ch=0;
               int close_detections=0;
               for (int i=0;i<dbb.size();i++){
-                  //如果满足上述条件的box不只一个，那么就找到检测器检测到的box与跟踪器预测到的box距离很近（重叠度大于0.7）的所以box，
+                  //如果满足上述条件的box不只一个，那么就找到检测器检测到的box与跟踪器预测到的box距离很近（重叠度大于0.7）的所有box，
 		  //对其坐标和大小进行累加
 		  if(bbOverlap(tbb,dbb[i])>0.7){                     // Get mean of close detections
                       cx += dbb[i].x;
@@ -623,7 +623,7 @@ void TLD::learn(const Mat& img){
       if (bbOverlap(lastbox,grid[idx]) < bad_overlap)
         nn_examples.push_back(dt.patch[i]);
   }
-  // 分类器更新并训练
+  // 更新分类器的训练函数
   classifier.trainF(fern_examples,2);
   classifier.trainNN(nn_examples);
   classifier.show();//把正样本库（在线模型）包含的所有正样本显示在窗口上
