@@ -255,7 +255,7 @@ double TLD::getVar(const BoundingBox& box,const Mat& sum,const Mat& sqsum){
   double sqmean = (brsq+tlsq-trsq-blsq)/((double)box.area());
   return sqmean-mean*mean;
 }
-
+//逐帧读入图片序列，进行算法处理。processFrame共包含四个模块（依次处理）：跟踪模块、检测模块、综合模块和学习模块；
 void TLD::processFrame(const cv::Mat& img1,const cv::Mat& img2,vector<Point2f>& points1,vector<Point2f>& points2,BoundingBox& bbnext,bool& lastboxfound, bool tl, FILE* bb_file){
   vector<BoundingBox> cbb;
   vector<float> cconf;
@@ -263,6 +263,7 @@ void TLD::processFrame(const cv::Mat& img1,const cv::Mat& img2,vector<Point2f>& 
   int didx; //detection index
   ///Track
   if(lastboxfound && tl){
+  //track函数完成前一帧img1的特征点points1到当前帧img2的特征点points2的跟踪预测；    
       track(img1,img2,points1,points2);
   }
   else{
@@ -345,7 +346,7 @@ void TLD::processFrame(const cv::Mat& img1,const cv::Mat& img2,vector<Point2f>& 
     learn(img2);
 }
 
-
+//track函数完成前一帧img1的特征点points1到当前帧img2的特征点points2的跟踪预测；
 void TLD::track(const Mat& img1, const Mat& img2,vector<Point2f>& points1,vector<Point2f>& points2){
   /*Inputs:
    * -current frame(img2), last frame(img1), last Bbox(bbox_f[0]).
@@ -353,6 +354,7 @@ void TLD::track(const Mat& img1, const Mat& img2,vector<Point2f>& points1,vector
    *- Confidence(tconf), Predicted bounding box(tbb),Validity(tvalid), points2 (for display purposes only)
    */
   //Generate points
+  //先在lastbox中均匀采样10*10=100个特征点（网格均匀撒点），存于points1：
   bbPoints(points1,lastbox);
   if (points1.size()<1){
       printf("BB= %d %d %d %d, Points not generated\n",lastbox.x,lastbox.y,lastbox.width,lastbox.height);
@@ -362,10 +364,15 @@ void TLD::track(const Mat& img1, const Mat& img2,vector<Point2f>& points1,vector
   }
   vector<Point2f> points = points1;
   //Frame-to-frame tracking with forward-backward error cheking
+  //利用金字塔LK光流法跟踪这些特征点，并预测当前帧的特征点（见下面的解释）、计算FB error和匹配相似度sim就是用NCC的，
+  //然后筛选出 FB_error[i] <= median(FB_error) 和 sim_error[i] > median(sim_error) 的特征点（舍弃跟踪结果不好的特征点）
+  //剩下的是不到50%的特征点：
   tracked = tracker.trackf2f(img1,img2,points,points2);
   if (tracked){
       //Bounding box prediction
+      //利用剩下的这不到一半的跟踪点输入来预测bounding box在当前帧的位置和大小tbb
       bbPredict(points,points2,lastbox,tbb);
+      //跟踪失败检测
       if (tracker.getFB()>10 || tbb.x>img2.cols ||  tbb.y>img2.rows || tbb.br().x < 1 || tbb.br().y <1){
           tvalid =false; //too unstable prediction or bounding box out of image
           tracked = false;
@@ -383,6 +390,7 @@ void TLD::track(const Mat& img1, const Mat& img2,vector<Point2f>& points1,vector
       getPattern(img2(bb),pattern,mean,stdev);
       vector<int> isin;
       float dummy;
+      //计算图像片pattern到在线模型M的保守相似度
       classifier.NNConf(pattern,isin,dummy,tconf); //Conservative Similarity
       tvalid = lastvalid;
       if (tconf>classifier.thr_nn_valid){
