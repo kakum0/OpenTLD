@@ -172,10 +172,10 @@ REPEAT://进入一个循环：读入新的一帧，然后转换为灰度图像�
     //get frame
     cvtColor(frame, current_gray, CV_RGB2GRAY);
     //Process Frame
-    //逐帧读入图片序列，进行算法处理。processFrame共包含四个模块（依次处理）：跟踪模块、检测模块、综合模块和学习模块；
+    //逐帧读入图片序列，进行算法处理。processFrame共包含四个模块（依次处理）：跟踪模块、检测模块、综合模块和学习模块；line259
     tld.processFrame(last_gray,current_gray,pts1,pts2,pbox,status,tl,bb_file);   
     //Draw Points如果跟踪成功，则把相应的点和box画出来：
-    if (status){//若成功
+    if (status){//若成功则把相应的点和box画出来
       drawPoints(frame,pts1);
       drawPoints(frame,pts2,Scalar(0,255,0));//当前特征点用蓝色标志
       drawBox(frame,pbox);
