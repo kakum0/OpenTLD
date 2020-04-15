@@ -263,29 +263,35 @@ void TLD::processFrame(const cv::Mat& img1,const cv::Mat& img2,vector<Point2f>& 
   int didx; //detection index
   ///Track
   if(lastboxfound && tl){
-  //track函数完成前一帧img1的特征点points1到当前帧img2的特征点points2的跟踪预测；    
+  //track函数完成前一帧img1的特征点points1到当前帧img2的特征点points2的跟踪预测； line351   
       track(img1,img2,points1,points2);
   }
   else{
       tracked = false;
   }
   ///Detect
+  //检测模块line455
   detect(img2);
-  ///Integration检测模块
+  ///Integration
   if (tracked){
       bbnext=tbb;
       lastconf=tconf;
       lastvalid=tvalid;
       printf("Tracked\n");
       if(detected){                                               //   if Detected
-          clusterConf(dbb,dconf,cbb,cconf);                       //   cluster detections
+          //要综合了
+	  //先通过重叠度对检测器检测到的目标bounding box进行聚类，每个类的重叠度小于0.5
+	  clusterConf(dbb,dconf,cbb,cconf);                       //   cluster detections
           printf("Found %d clusters\n",(int)cbb.size());
           for (int i=0;i<cbb.size();i++){
-              if (bbOverlap(tbb,cbb[i])<0.5 && cconf[i]>tconf){  //  Get index of a clusters that is far from tracker and are more confident than the tracker
+              //找到与跟踪器跟踪到的box距离比较远的类（检测器检测到的box），
+	      //而且它的相关相似度比跟踪器的要大：记录满足上述条件，也就是可信度比较高的目标box的个数
+	      if (bbOverlap(tbb,cbb[i])<0.5 && cconf[i]>tconf){  //  Get index of a clusters that is far from tracker and are more confident than the tracker
                   confident_detections++;
                   didx=i; //detection index
               }
           }
+	  //判断如果只有一个满足上述条件的box，那么就用这个目标box来重新初始化跟踪器（也就是用检测器的结果去纠正跟踪器）
           if (confident_detections==1){                                //if there is ONE such a cluster, re-initialize the tracker
               printf("Found a better match..reinitializing tracking\n");
               bbnext=cbb[didx];
@@ -297,7 +303,9 @@ void TLD::processFrame(const cv::Mat& img1,const cv::Mat& img2,vector<Point2f>& 
               int cx=0,cy=0,cw=0,ch=0;
               int close_detections=0;
               for (int i=0;i<dbb.size();i++){
-                  if(bbOverlap(tbb,dbb[i])>0.7){                     // Get mean of close detections
+                  //如果满足上述条件的box不只一个，那么就找到检测器检测到的box与跟踪器预测到的box距离很近（重叠度大于0.7）的所以box，
+		  //对其坐标和大小进行累加
+		  if(bbOverlap(tbb,dbb[i])>0.7){                     // Get mean of close detections
                       cx += dbb[i].x;
                       cy +=dbb[i].y;
                       cw += dbb[i].width;
@@ -307,7 +315,8 @@ void TLD::processFrame(const cv::Mat& img1,const cv::Mat& img2,vector<Point2f>& 
                   }
               }
               if (close_detections>0){
-                  bbnext.x = cvRound((float)(10*tbb.x+cx)/(float)(10+close_detections));   // weighted average trackers trajectory with the close detections
+              //对与跟踪器预测到的box距离很近的box 和 跟踪器本身预测到的box 进行坐标与大小的平均作为最终的目标bounding box，但是跟踪器的权值较大
+		  bbnext.x = cvRound((float)(10*tbb.x+cx)/(float)(10+close_detections));   // weighted average trackers trajectory with the close detections
                   bbnext.y = cvRound((float)(10*tbb.y+cy)/(float)(10+close_detections));
                   bbnext.width = cvRound((float)(10*tbb.width+cw)/(float)(10+close_detections));
                   bbnext.height =  cvRound((float)(10*tbb.height+ch)/(float)(10+close_detections));
@@ -329,21 +338,22 @@ void TLD::processFrame(const cv::Mat& img1,const cv::Mat& img2,vector<Point2f>& 
       if(detected){                           //  and detector is defined
           clusterConf(dbb,dconf,cbb,cconf);   //  cluster detections
           printf("Found %d clusters\n",(int)cbb.size());
-          if (cconf.size()==1){
+      //如果跟踪器没有跟踪到目标，但是检测器检测到了一些可能的目标box，那么同样对其进行聚类，但只是简单的将聚类的cbb[0]作为新的跟踪目标box，重新初始化跟踪器
+	  if (cconf.size()==1){
               bbnext=cbb[0];
               lastconf=cconf[0];
               printf("Confident detection..reinitializing tracker\n");
               lastboxfound = true;
           }
       }
-  }
+  }//综合模块结束。
   lastbox=bbnext;
   if (lastboxfound)
     fprintf(bb_file,"%d,%d,%d,%d,%f\n",lastbox.x,lastbox.y,lastbox.br().x,lastbox.br().y,lastconf);
   else
     fprintf(bb_file,"NaN,NaN,NaN,NaN,NaN\n");
   if (lastvalid && tl)
-    learn(img2);
+    learn(img2);//学习模块line557
 }
 
 //track函数完成前一帧img1的特征点points1到当前帧img2的特征点points2的跟踪预测；
@@ -458,7 +468,9 @@ void TLD::detect(const cv::Mat& frame){
   dt.bb.clear();
   double t = (double)getTickCount();
   Mat img(frame.rows,frame.cols,CV_8U);
+  //计算img2的积分图，为了更快的计算方差
   integral(frame,iisum,iisqsum);
+  //用高斯模糊，去噪
   GaussianBlur(frame,img,Size(9,9),1.5);
   int numtrees = classifier.getNumStructs();
   float fern_th = classifier.getFernTh();
@@ -467,14 +479,18 @@ void TLD::detect(const cv::Mat& frame){
   int a=0;
   Mat patch;
   for (int i=0;i<grid.size();i++){//FIXME: BottleNeck
-      if (getVar(grid[i],iisum,iisqsum)>=var){
+     //利用积分图计算每个待检测窗口的方差，方差大于var阈值（目标patch方差的50%）的，则认为其含有前景目标，通过该模块的进入集合分类器模块 
+     if (getVar(grid[i],iisum,iisqsum)>=var){
           a++;
 		  patch = img(grid[i]);
-          classifier.getFeatures(patch,grid[i].sidx,ferns);
-          conf = classifier.measure_forest(ferns);
+          //集合分类器，计算特征值
+	  classifier.getFeatures(patch,grid[i].sidx,ferns);
+          //再计算该特征值对应的后验概率累加值
+	  conf = classifier.measure_forest(ferns);
           tmp.conf[i]=conf;
           tmp.patt[i]=ferns;
-          if (conf>numtrees*fern_th){
+          //若集合分类器的后验概率的平均值大于阈值fern_th（由训练得到），就认为含有前景目标
+	  if (conf>numtrees*fern_th){
               dt.bb.push_back(i);
           }
       }
@@ -484,7 +500,7 @@ void TLD::detect(const cv::Mat& frame){
   int detections = dt.bb.size();
   printf("%d Bounding boxes passed the variance filter\n",a);
   printf("%d Initial detection from Fern Classifier\n",detections);
-  if (detections>100){
+  if (detections>100){//如果顺利通过以上两个检测模块的扫描窗口数大于100个，则只取后验概率大的前100个；
       nth_element(dt.bb.begin(),dt.bb.begin()+100,dt.bb.end(),CComparator(tmp.conf));
       dt.bb.resize(100);
       detections=100;
@@ -513,10 +529,13 @@ void TLD::detect(const cv::Mat& frame){
   for (int i=0;i<detections;i++){                                         //  for every remaining detection
       idx=dt.bb[i];                                                       //  Get the detected bounding box index
 	  patch = frame(grid[idx]);
+      //先归一化patch的size（放缩至patch_size = 15*15），存入dt.patch[i];
       getPattern(patch,dt.patch[i],mean,stdev);                //  Get pattern within bounding box
+      //计算图像片pattern到在线模型M的相关相似度和保守相似度
       classifier.NNConf(dt.patch[i],dt.isin[i],dt.conf1[i],dt.conf2[i]);  //  Evaluate nearest neighbour classifier
       dt.patt[i]=tmp.patt[idx];
       //printf("Testing feature %d, conf:%f isin:(%d|%d|%d)\n",i,dt.conf1[i],dt.isin[i][0],dt.isin[i][1],dt.isin[i][2]);
+      //相关相似度大于阈值，则认为含有前景目标
       if (dt.conf1[i]>nn_th){                                               //  idx = dt.conf1 > tld.model.thr_nn; % get all indexes that made it through the nearest neighbour
           dbb.push_back(grid[idx]);                                         //  BB    = dt.bb(:,idx); % bounding boxes
           dconf.push_back(dt.conf2[i]);                                     //  Conf  = dt.conf2(:,idx); % conservative confidences
@@ -529,7 +548,7 @@ void TLD::detect(const cv::Mat& frame){
   else{
       printf("No NN matches found.\n");
       detected=false;
-  }
+  }//检测器检测完成，全部通过三个检测模块的扫描窗口存在dbb中
 }
 
 void TLD::evaluate(){
@@ -545,9 +564,11 @@ void TLD::learn(const Mat& img){
   bb.height = min(min(img.rows-lastbox.y,lastbox.height),min(lastbox.height,lastbox.br().y));
   Scalar mean, stdev;
   Mat pattern;
+  //归一化img(bb)对应的patch的size（放缩至patch_size = 15*15），存入pattern
   getPattern(img(bb),pattern,mean,stdev);
   vector<int> isin;
   float dummy, conf;
+  //计算输入图像片（跟踪器的目标box）与在线模型之间的相关相似度conf
   classifier.NNConf(pattern,isin,conf,dummy);
   if (conf<0.5) {
       printf("Fast change..not training\n");
@@ -563,17 +584,21 @@ void TLD::learn(const Mat& img){
       printf("Patch in negative data..not traing");
       lastvalid=false;
       return;
-  }
-/// Data generation
+  }//上面这段：如果相似度太小了或者如果方差太小了或者如果被被识别为负样本就不训练
+/// Data generation  先计算所有的扫描窗口与目前的目标box的重叠度
   for (int i=0;i<grid.size();i++){
       grid[i].overlap = bbOverlap(lastbox,grid[i]);
   }
-  //集合分类器
+  //集合分类器的样本fern_examples
   vector<pair<vector<int>,int> > fern_examples;
   good_boxes.clear();
   bad_boxes.clear();
+  //再根据传入的lastbox，在整帧图像中的全部窗口中寻找与该lastbox距离最小（即最相似，重叠度最大）的num_closest_update个窗口，
+  //然后把这些窗口归入good_boxes容器（只是把网格数组的索引存入）
+  //同时，把重叠度小于0.2的，归入 bad_boxes 容器
   getOverlappingBoxes(lastbox,num_closest_update);
   if (good_boxes.size()>0)
+    //然后用仿射模型产生正样本（类似于第一帧的方法，但只产生10*10=100个）
     generatePositiveData(img,num_warps_update);
   else{
     lastvalid = false;
@@ -589,7 +614,7 @@ void TLD::learn(const Mat& img){
           fern_examples.push_back(make_pair(tmp.patt[idx],0));
       }
   }
-  //最近邻分类器
+  //最近邻分类器的样本：nn_examples
   vector<Mat> nn_examples;
   nn_examples.reserve(dt.bb.size()+1);
   nn_examples.push_back(pEx);
@@ -598,10 +623,10 @@ void TLD::learn(const Mat& img){
       if (bbOverlap(lastbox,grid[idx]) < bad_overlap)
         nn_examples.push_back(dt.patch[i]);
   }
-  /// Classifiers update
+  // 分类器更新并训练
   classifier.trainF(fern_examples,2);
   classifier.trainNN(nn_examples);
-  classifier.show();
+  classifier.show();//把正样本库（在线模型）包含的所有正样本显示在窗口上
 }
 
 void TLD::buildGrid(const cv::Mat& img, const cv::Rect& box){
